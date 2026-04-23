@@ -58,5 +58,17 @@ contract Submission is ERC721 {
         }
         return result;
     }
+        mapping(uint256 => uint256) public votes;
+    mapping(address => mapping(uint256 => bool)) private hasVoted;
+    error AlreadyVoted();
+
+    function vote(uint256 _id) external {
+        if (_id >= counter) revert("Nie ma takiego Haiku");
+        if (hasVoted[msg.sender][_id]) revert AlreadyVoted();
+        hasVoted[msg.sender][_id] = true;
+        votes[_id] += 1;
+    }
+
 }
+
 # BL-5.1
