@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.23;
+
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+
+contract Submission is ERC721 {
+    struct Haiku { address author; string line1; string line2; string line3; }
+
+    uint256 public counter;
+    mapping(uint256 => Haiku) private haikus;
+    mapping(bytes32 => bool) private haikuHashes;
+    mapping(address => uint256[]) private sharedHaikus;
+
+    mapping(uint256 => uint256) public votes;
+    mapping(address => mapping(uint256 => bool)) private hasVoted;
+
+    constructor() ERC721("HaikuNFT", "HNK") {}
+
+    function mintHaiku(string memory l1, string memory l2, string memory l3) external {
+        require(bytes(l1).length > 0 && bytes(l2).length > 0 && bytes(l3).length > 0, "Empty");
+        bytes32 hash = keccak256(abi.encodePacked(l1, l2, l3));
+        require(!haikuHashes[hash], "Not unique");
+        
+        haikuHashes[hash] = true;
+        haikus[counter] = Haiku(msg.sender, l1, l2, l3);
+        _mint(msg.sender, counter++);
+    }
+
+    function shareHaiku(uint256 id, address to) external {
+        require(ownerOf(id) == msg.sender, "Not yours");
+        for (uint256 i = 0; i < sharedHaikus[to].length; i++) {
+            if (sharedHaikus[to][i] == id) return; // Pomija, jeśli już udostępniono
+        }
+        sharedHaikus[to].push(id);
+    }
+
+    function getMySharedHaikus() external view returns (Haiku[] memory) {
+        uint256[] memory ids = sharedHaikus[msg.sender];
+        require(ids.length > 0, "None");
+
+        Haiku[] memory result = new Haiku[](ids.length);
+        for (uint256 i = 0; i < ids.length; i++) {
+            result[i] = haikus[ids[i]];
+        }
+        return result;
+    }
+
+    function vote(uint256 id) external {
+        require(id < counter, "No such Haiku");
+        require(!hasVoted[msg.sender][id], "Voted");
+        
+        hasVoted[msg.sender][id] = true;
+        votes[id]++;
+    }
+}
