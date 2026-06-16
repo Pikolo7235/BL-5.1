@@ -1,0 +1,132 @@
+// Adres wdrożonego smart kontraktu (podmień po deployu np. na Base)
+const CONTRACT_ADDRESS = "0xTwójAdresKontraktuOrazSieciBase";
+
+// Uproszczone ABI (interfejs), aby JS wiedział, jakie funkcje istnieją w kontrakcie
+const CONTRACT_ABI = [
+    "function mintHaiku(string memory _line1, string memory _line2, string memory _line3) external",
+    "function vote(uint256 _id) external",
+    "function listHaiku(uint256 _id, uint256 _price) external",
+    "function buyHaiku(uint256 _id) external payable",
+    "function tokenURI(uint256 _id) public view returns (string memory)",
+    "function counter() public view returns (uint256)",
+    "function votes(uint256) public view returns (uint256)"
+];
+
+let provider;
+let signer;
+let contract;
+
+// 1. POŁĄCZENIE Z PORTFELEM EVM (np. MetaMask)
+async function connectWallet() {
+    if (typeof window.ethereum === 'undefined') {
+        alert('Nie wykryto portfela Web3! Zainstaluj MetaMask.');
+        return;
+    }
+
+    try {
+        // Inicjalizacja ethers v6
+        provider = new ethers.BrowserProvider(window.ethereum);
+        
+        // Poproszenie użytkownika o dostęp do konta
+        signer = await provider.getSigner();
+        const userAddress = await signer.getAddress();
+        
+        // Podpięcie kontraktu pod zalogowanego użytkownika
+        contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+        
+        console.log(`Połączono z adresem: ${userAddress}`);
+        alert(`Połączono pomyślnie z portfelem!`);
+    } catch (error) {
+        console.error("Błąd podczas łączenia z portfelem:", error);
+    }
+}
+
+// 2. BICIE NOWEGO HAIKU (MINT)
+async function mintNewHaiku(line1, line2, line3) {
+    if (!contract) return alert("Najpierw połącz portfel!");
+    
+    try {
+        console.log("Inicjalizacja transakcji mintowania...");
+        // Wywołanie funkcji z kontraktu
+        const tx = await contract.mintHaiku(line1, line2, line3);
+        
+        console.log(`Transakcja wysłana! Hash: ${tx.hash}`);
+        // Oczekiwanie na zatwierdzenie transakcji w bloku
+        const receipt = await tx.wait();
+        
+        console.log("Haiku zostało pomyślnie wybite!", receipt);
+        alert("Sukces! Twoje Haiku NFT zostało zapisane na blockchainie.");
+    } catch (error) {
+        console.error("Błąd podczas mintowania:", error);
+    }
+}
+
+// 3. GŁOSOWANIE NA HAIKU
+async function voteForHaiku(haikuId) {
+    if (!contract) return alert("Najpierw połącz portfel!");
+
+    try {
+        const tx = await contract.vote(haikuId);
+        await tx.wait();
+        alert(`Oddano głos na Haiku #${haikuId}!`);
+    } catch (error) {
+        // Obsługa custom errorów z Solidity
+        console.error("Błąd głosowania:", error);
+        alert("Nie udało się oddać głosu. Prawdopodobnie już głosowałeś na to ID.");
+    }
+}
+
+// 4. WYSTAWIENIE NA SPRZEDAŻ (MARKETPLACE)
+async function listHaikuForSale(haikuId, priceInEth) {
+    if (!contract) return alert("Najpierw połącz portfel!");
+
+    try {
+        // Konwersja ETH wpisanego przez użytkownika na Wei (czytelne dla blockchaina)
+        const priceInWei = ethers.parseEther(priceInEth.toString());
+        
+        const tx = await contract.listHaiku(haikuId, priceInWei);
+        await tx.wait();
+        
+        alert(`Haiku #${haikuId} zostało wystawione za ${priceInEth} ETH!`);
+    } catch (error) {
+        console.error("Błąd wystawiania na sprzedaż:", error);
+    }
+}
+
+// 5. ZAKUP HAIKU OD INNEGO UŻYTKOWNIKA
+async function buyHaikuNFT(haikuId, priceInEth) {
+    if (!contract) return alert("Najpierw połącz portfel!");
+
+    try {
+        const priceInWei = ethers.parseEther(priceInEth.toString());
+        
+        // Wywołanie funkcji payable z przesłaniem wartości (value) w ETH
+        const tx = await contract.buyHaiku(haikuId, { value: priceInWei });
+        await tx.wait();
+        
+        alert(`Gratulacje! Kupiłeś Haiku #${haikuId}.`);
+    } catch (error) {
+        console.error("Błąd zakupu:", error);
+    }
+}
+
+// 6. ODCZYT METADANYCH ON-CHAIN (WIZUALIZACJA NFT)
+async function displayHaikuNFT(haikuId) {
+    if (!contract) return alert("Najpierw połącz portfel!");
+
+    try {
+        // Pobranie danych w formacie base64 JSON z kontraktu
+        const metadataUri = await contract.tokenURI(haikuId);
+        
+        // Dekodowanie danych ze standardu data:application/json;base64,...
+        const jsonBase64 = metadataUri.split(",")[1];
+        const decodedJson = atob(jsonBase64);
+        const nftData = JSON.parse(decodedJson);
+
+        console.log("Metadane Twojego NFT:", nftData);
+        // nftData.image zawiera zakodowany obrazek SVG gotowy do wrzucenia w tag <img src="...">
+        return nftData;
+    } catch (error) {
+        console.error("Błąd odczytu tokenURI:", error);
+    }
+}
