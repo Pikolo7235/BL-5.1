@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Base Haiku NFT Portal v2</title>
+    <!-- Import biblioteki ethers v6 niezbędnej do komunikacji z blockchainem -->
+    <script src="https://cloudflare.com"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f4f6f9; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 750px; margin: 0 auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #0052FF; text-align: center; margin-bottom: 5px; }
+        p.subtitle { text-align: center; color: #666; margin-top: 0; font-size: 14px; }
+        
+        .section-box { background: #f8f9fa; border: 1px solid #e2e8f0; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
+        .section-title { font-weight: bold; color: #0052FF; margin-bottom: 10px; font-size: 16px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; }
+        
+        .form-group { margin-bottom: 12px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 13px; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 14px; }
+        
+        .btn-primary { width: 100%; padding: 12px; background-color: #0052FF; color: white; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; font-weight: bold; }
+        .btn-primary:hover { background-color: #003db3; }
+        .btn-secondary { background-color: #4a5568; margin-top: 5px; padding: 8px; font-size: 13px; width: auto; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .btn-secondary:hover { background-color: #2d3748; }
+        
+        .wallet-status { background: #e6f0ff; border: 1px solid #b3d1ff; padding: 12px; border-radius: 6px; margin-bottom: 20px; text-align: center; font-size: 14px; }
+        .wallet-status strong { color: #0052FF; }
+        
+        #loading { display: none; text-align: center; font-weight: bold; color: #0052FF; margin-top: 15px; }
+        #results { margin-top: 20px; }
+        
+        /* Styl karty NFT z podglądem wygenerowanego on-chain SVG */
+        .nft-card { background: white; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px; display: flex; flex-direction: column; }
+        .nft-preview { width: 100%; height: auto; display: block; background: #121212; }
+        .nft-info { padding: 15px; font-size: 13px; }
+        .nft-info h3 { margin: 0 0 8px 0; color: #333; font-size: 16px; }
+        .nft-info span { display: block; color: #555; margin-bottom: 4px; word-break: break-all; }
+        
+        .grid-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Base Haiku NFT Portal</h1>
+        <p class="subtitle">Interaktywny panel Web3 dApp połączony ze smart kontraktem</p>
+        
+        <!-- Status Portfela -->
+        <div class="wallet-status" id="walletSection">
+            🔴 Portfel niepołączony. Użyj przycisku poniżej, aby autoryzować aplikację.<br><br>
+            <button class="btn-primary" onclick="connectWallet()">Połącz z portfelem Web3</button>
+        </div>
+
+        <div id="loading">Oczekiwanie na potwierdzenie transakcji blockchain...</div>
+
+        <!-- Sekcja 1: Tworzenie (Mint) nowego Haiku -->
+        <div class="section-box">
+            <div class="section-title">✍️ Stwórz nowe Haiku NFT (On-Chain)</div>
+            <div class="form-group">
+                <label>Linijka 1 (Musi być unikalna):</label>
+                <input type="text" id="mintL1" placeholder="Wpisz pierwszą linijkę tekstu">
+            </div>
+            <div class="form-group">
+                <label>Linijka 2:</label>
+                <input type="text" id="mintL2" placeholder="Wpisz drugą linijkę tekstu">
+            </div>
+            <div class="form-group">
+                <label>Linijka 3:</label>
+                <input type="text" id="mintL3" placeholder="Wpisz trzecią linijkę tekstu">
+            </div>
+            <button class="btn-primary" onclick="uiMintHaiku()">Wybij poetyckie NFT</button>
+        </div>
+
+        <!-- Sekcja 2: Interakcje (Głosowanie, Kupno, Sprzedaż) -->
+        <div class="grid-two">
+            <!-- Głosowanie i Podgląd -->
+            <div class="section-box">
+                <div class="section-title">🔍 Wyświetl i Zagłosuj</div>
+                <div class="form-group">
+                    <label>Identyfikator Haiku ID:</label>
+                    <input type="number" id="targetId" placeholder="np. 0" min="0">
+                </div>
+                <button class="btn-secondary" style="width:100%;" onclick="uiFetchAndDisplay()">Pobierz z Blockchaina</button>
+                <button class="btn-primary" style="margin-top:10px;" onclick="uiVoteHaiku()">👍 Oddaj 1 Głos</button>
+            </div>
+
+            <!-- Marketplace -->
+            <div class="section-box">
+                <div class="section-title">🛒 Rynek dApp (Marketplace)</div>
+                <div class="form-group">
+                    <label>Cena w ETH:</label>
+                    <input type="number" id="listingPrice" placeholder="np. 0.005" step="0.0001" min="0">
+                </div>
+                <button class="btn-secondary" style="width:100%; background-color: #dc3545;" onclick="uiListHaiku()">Wystaw na sprzedaż</button>
+                <button class="btn-primary" style="margin-top:10px; background-color: #28a745;" onclick="uiBuyHaiku()">💳 Kup ten token</button>
+            </div>
+        </div>
+
+        <!-- Dynamiczne Wyniki i Podgląd Wygenerowanego NFT -->
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // Adres Twojego wdrożonego kontraktu (Zmień na swój po wdrożeniu)
+        const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+
+        // Pełne przełożenie funkcji kontraktu AdvancedHaikuNFT na interfejs JS (v6 readable ABI)
+        const CONTRACT_ABI = [
+            "function mintHaiku(string memory _line1, string memory _line2, string memory _line3) external",
+            "function vote(uint256 _id) external",
+            "function listHaiku(uint256 _id, uint256 _price) external",
+            "function buyHaiku(uint256 _id) external payable",
+            "function tokenURI(uint256 _id) public view returns (string memory)",
+            "function counter() public view returns (uint256)",
+            "function votes(uint256) public view returns (uint256)",
+            "function marketplace(uint256) public view returns (uint256 price, bool isForSale)"
+        ];
+
+        let provider;
+        let signer;
+        let contract;
+
+        // POŁĄCZENIE Z METAMASK / PORTFELEM WEB3
+        async function connectWallet() {
+            if (typeof window.ethereum === 'undefined') {
+                alert('Nie wykryto portfela dApp! Zainstaluj rozszerzenie MetaMask.');
+                return;
+            }
+            try {
+                provider = new ethers.BrowserProvider(window.ethereum);
+                signer = await provider.getSigner();
+                const userAddress = await signer.getAddress();
+                contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+                // Aktualizacja interfejsu wizualnego statusu połączenia
+                document.getElementById('walletSection').innerHTML = `
+                    🟢 <strong>Połączony portfel:</strong> ${userAddress.substring(0,6)}...${userAddress.substring(38)}<br>
+                    <small style="color:#666;">Gotowy do interakcji z siecią blockchain</small>
+                `;
+            } catch (error) {
+                console.error(error);
+                alert('Błąd autoryzacji portfela.');
+            }
+        }
+
+        function toggleLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        // AKCJA MINTOWANIA Z FRONTENDU
+        async function uiMintHaiku() {
+            if (!contract) return alert("Najpierw połącz portfel przyciskiem na górze strony!");
+            const l1 = document.getElementById('mintL1').value.trim();
+            const l2 = document.getElementById('mintL2').value.trim();
+            const l3 = document.getElementById('mintL3').value.trim();
+
+            if (!l1 || !l2 || !l3) return alert("Wszystkie trzy linijki wiersza muszą być uzupełnione!");
+
+            try {
+                toggleLoading(true);
+                const tx = await contract.mintHaiku(l1, l2, l3);
+                await tx.wait(); // Oczekiwanie na zapis w bloku
+                toggleLoading(false);
+                alert("Sukces! Twoje poetyckie Haiku NFT zostało pomyślnie wybite (Minted)!");
+            } catch (error) {
+                toggleLoading(false);
+                console.error(error);
+                alert("Błąd mintowania. Upewnij się, czy pierwsza linijka jest unikalna!");
+            }
+        }
+
+        // AKCJA GŁOSOWANIA Z FRONTENDU
+        async function uiVoteHaiku() {
+            if (!contract) return alert("Połącz swój portfel!");
+            const id = document.getElementById('targetId').value;
+            if (id === "") return alert("Podaj ID tokenu!");
+
+            try {
+                toggleLoading(true);
+                const tx = await contract.vote(id);
+                await tx.wait();
+                toggleLoading(false);
+                alert(`Twój głos na NFT #${id} został zarejestrowany!`);
+                uiFetchAndDisplay(); // Odświeżenie danych na ekranie
+            } catch (error) {
+                toggleLoading(false);
+                console.error(error);
