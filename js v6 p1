@@ -1,0 +1,230 @@
+<!-- Prawidłowy import biblioteki ethers v6 z sieci CDN -->
+<script src="https://cloudflare.com"></script>
+<script>
+    // Adres Twojego wdrożonego kontraktu (Zmień na swój po wdrożeniu)
+    const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+
+    // Pełne przełożenie funkcji kontraktu AdvancedHaikuNFT na interfejs JS (v6 readable ABI)
+    const CONTRACT_ABI = [
+        "function mintHaiku(string memory _line1, string memory _line2, string memory _line3) external",
+        "function vote(uint256 _id) external",
+        "function listHaiku(uint256 _id, uint256 _price) external",
+        "function buyHaiku(uint256 _id) external payable",
+        "function tokenURI(uint256 _id) public view returns (string memory)",
+        "function counter() public view returns (uint256)",
+        "function votes(uint256) public view returns (uint256)",
+        "function marketplace(uint256) public view returns (uint256 price, bool isForSale)"
+    ];
+
+    let provider;
+    let signer;
+    let contract;
+
+    // INICJALIZACJA I REJESTRACJA NASŁUCHIWACZY ZMIAN
+    document.addEventListener('DOMContentLoaded', async () => {
+        if (typeof window.ethereum !== 'undefined') {
+            // 1. Wykrywanie zmiany konta (adresu) w portfelu
+            window.ethereum.on('accountsChanged', (accounts) => {
+                handleAccountsChanged(accounts);
+            });
+
+            // 2. Wykrywanie zmiany sieci blockchain (np. Base, Ethereum, Localhost)
+            window.ethereum.on('chainChanged', () => {
+                // Oficjalna rekomendacja MetaMask: przeładuj stronę przy zmianie sieci
+                window.location.reload();
+            });
+
+            // Opcjonalnie: Sprawdź czy użytkownik był już połączony i połącz automatycznie
+            const loggedIn = localStorage.getItem('web3_connected');
+            if (loggedIn === 'true') {
+                const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                if (accounts.length > 0) {
+                    connectWallet();
+                }
+            }
+        }
+    });
+
+    // REAKCJA NA ZMIANĘ KONTA
+    async function handleAccountsChanged(accounts) {
+        if (accounts.length === 0) {
+            // Użytkownik rozłączył dApp wewnątrz portfela
+            localStorage.setItem('web3_connected', 'false');
+            signer = null;
+            contract = null;
+            document.getElementById('walletSection').innerHTML = `
+                🔴 Portfel rozłączony. Użyj przycisku poniżej, aby autoryzować aplikację.<br><br>
+                <button class="btn-primary" onclick="connectWallet()">Połącz z portfelem Web3</button>
+            `;
+            document.getElementById('results').innerHTML = '';
+        } else {
+            // Nastąpiła zmiana konta na inne – rekonfiguracja obiektów ethers.js
+            localStorage.setItem('web3_connected', 'true');
+            provider = new ethers.BrowserProvider(window.ethereum);
+            signer = await provider.getSigner();
+            const userAddress = accounts[0];
+            contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+
+            document.getElementById('walletSection').innerHTML = `
+                🟢 <strong>Połączony portfel:</strong> ${userAddress.substring(0,6)}...${userAddress.substring(38)}<br>
+                <small style="color:#28a745;">Pomyślnie przełączono konto w czasie rzeczywistym!</small>
+            `;
+            
+            // Jeśli na ekranie był wynik wyszukiwania NFT, odśwież go dla nowego kontekstu konta
+            const targetId = document.getElementById('targetId').value;
+            if (targetId !== '') {
+                uiFetchAndDisplay();
+            }
+        }
+    }
+
+    // POŁĄCZENIE Z METAMASK / PORTFELEM WEB3
+    async function connectWallet() {
+        if (typeof window.ethereum === 'undefined') {
+            alert('Nie wykryto portfela dApp! Zainstaluj rozszerzenie MetaMask.');
+            return;
+        }
+        try {
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            await handleAccountsChanged(accounts);
+        } catch (error) {
+            console.error(error);
+            alert('Błąd autoryzacji portfela.');
+        }
+    }
+
+    function toggleLoading(show) {
+        document.getElementById('loading').style.display = show ? 'block' : 'none';
+    }
+
+    // AKCJA MINTOWANIA Z FRONTENDU
+    async function uiMintHaiku() {
+        if (!contract) return alert('Najpierw połącz swój portfel Web3!');
+        
+        const l1 = document.getElementById('mintL1').value.trim();
+        const l2 = document.getElementById('mintL2').value.trim();
+        const l3 = document.getElementById('mintL3').value.trim();
+
+        if (!l1 || !l2 || !l3) return alert('Wszystkie trzy linijki haiku muszą być uzupełnione!');
+
+        try {
+            toggleLoading(true);
+            const tx = await contract.mintHaiku(l1, l2, l3);
+            await tx.wait();
+            alert('Sukces! Twój poetycki token NFT został wybity na blockchainie.');
+            
+            document.getElementById('mintL1').value = '';
+            document.getElementById('mintL2').value = '';
+            document.getElementById('mintL3').value = '';
+        } catch (error) {
+            console.error(error);
+            alert('Błąd transakcji mintowania: ' + (error.reason || error.message));
+        } finally {
+            toggleLoading(false);
+        }
+    }
+
+    // POBIERANIE I DEKODOWANIE METADANYCH ON-CHAIN (TOKEN URI)
+    async function uiFetchAndDisplay() {
+        if (!contract) return alert('Połącz portfel, aby odczytać dane z blockchaina.');
+        
+        const targetId = document.getElementById('targetId').value;
+        if (targetId === '') return alert('Wprowadź poprawne ID tokenu.');
+
+        try {
+            toggleLoading(true);
+            
+            const uriData = await contract.tokenURI(targetId);
+            const voteCount = await contract.votes(targetId);
+            const marketData = await contract.marketplace(targetId);
+
+            const jsonB64 = uriData.split(',');
+            const decodedJson = JSON.parse(atob(jsonB64[1])); // Poprawka indeksu dla bezpieczeństwa parsowania base64
+
+            const svgImage = decodedJson.image; 
+
+            document.getElementById('results').innerHTML = `
+                <div class="nft-card">
+                    <img src="${svgImage}" class="nft-preview" alt="NFT Preview">
+                    <div class="nft-info">
+                        <h3>${decodedJson.name}</h3>
+                        <span>${decodedJson.description}</span>
+                        <hr style="border:0; border-top: 1px solid #eee; margin:10px 0;">
+                        <span><strong>Liczba głosów społeczności:</strong> 👍 ${voteCount.toString()}</span>
+                        <span><strong>Status rynku:</strong> ${marketData.isForSale ? `Na sprzedaż za: 🪙 ${ethers.formatEther(marketData.price)} ETH` : 'Nie wystawiony'}</span>
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            console.error(error);
+            document.getElementById('results').innerHTML = `<p style="color:red; text-align:center;">Błąd: Nie znaleziono tokenu o podanym identyfikatorze ID lub błąd dekodowania.</p>`;
+        } finally {
+            toggleLoading(false);
+        }
+    }
+
+    // ODDANIE GŁOSU NA NFT
+    async function uiVoteHaiku() {
+        if (!contract) return alert('Połącz portfel Web3!');
+        const targetId = document.getElementById('targetId').value;
+        if (targetId === '') return alert('Podaj ID tokenu do zagłosowania.');
+
+        try {
+            toggleLoading(true);
+            const tx = await contract.vote(targetId);
+            await tx.wait();
+            alert('Głos został zarejestrowany pomyślnie!');
+            await uiFetchAndDisplay();
+        } catch (error) {
+            console.error(error);
+            alert('Błąd podczas głosowania: ' + (error.reason || error.message));
+        } finally {
+            toggleLoading(false);
+        }
+    }
+
+    // WYSTAWIENIE NFT NA SPRZEDAŻ (MARKETPLACE)
+    async function uiListHaiku() {
+        if (!contract) return alert('Połącz portfel Web3!');
+        const targetId = document.getElementById('targetId').value;
+        const price = document.getElementById('listingPrice').value;
+
+        if (targetId === '' || !price) return alert('Wprowadź ID tokenu oraz cenę sprzedaży.');
+
+        try {
+            toggleLoading(true);
+            const priceInWei = ethers.parseEther(price);
+            
+            const tx = await contract.listHaiku(targetId, priceInWei);
+            await tx.wait();
+            alert('Token został pomyślnie wystawiony na rynku!');
+            await uiFetchAndDisplay();
+        } catch (error) {
+            console.error(error);
+            alert('Błąd wystawiania na rynek: ' + (error.reason || error.message));
+        } finally {
+            toggleLoading(false);
+        }
+    }
+
+    // ZAKUP TOKENU NFT
+    async function uiBuyHaiku() {
+        if (!contract) return alert('Połącz portfel Web3!');
+        const targetId = document.getElementById('targetId').value;
+        if (targetId === '') return alert('Podaj ID tokenu, który chcesz zakupić.');
+
+        try {
+            toggleLoading(true);
+            const marketData = await contract.marketplace(targetId);
+            if (!marketData.isForSale) return alert('Ten token nie jest obecnie na sprzedaż.');
+
+            const tx = await contract.buyHaiku(targetId, { value: marketData.price });
+            await tx.wait();
+            alert('Gratulacje! Zakupiłeś poetycki token NFT.');
+            await uiFetchAndDisplay();
+        } catch (error) {
+            console.error(error);
+            alert('Błąd zakupu tokenu: ' + (error.reason || error.message));
+        } finally {
+            toggleLoading(false);
+        }
