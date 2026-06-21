@@ -1,0 +1,142 @@
+t) return alert('Najpierw połącz swój portfel Web3!');
+            
+            const l1 = document.getElementById('mintL1').value.trim();
+            const l2 = document.getElementById('mintL2').value.trim();
+            const l3 = document.getElementById('mintL3').value.trim();
+
+            if (!l1 || !l2 || !l3) return alert('Wszystkie trzy linijki haiku muszą być uzupełnione!');
+
+            try {
+                toggleLoading(true);
+                // Wywołanie metody mintującej ze smart kontraktu
+                const tx = await contract.mintHaiku(l1, l2, l3);
+                await tx.wait(); // Oczekiwanie na zatwierdzenie bloku
+                alert('Sukces! Twój poetycki token NFT został wybity na blockchainie.');
+                
+                // Wyczyszczenie pól formularza
+                document.getElementById('mintL1').value = '';
+                document.getElementById('mintL2').value = '';
+                document.getElementById('mintL3').value = '';
+            } catch (error) {
+                console.error(error);
+                alert('Błąd transakcji mintowania: ' + (error.reason || error.message));
+            } finally {
+                toggleLoading(false);
+            }
+        }
+
+        // POBIERANIE I DEKODOWANIE METADANYCH ON-CHAIN (TOKEN URI)
+        async function uiFetchAndDisplay() {
+            if (!contract) return alert('Połącz portfel, aby odczytać dane z blockchaina.');
+            
+            const targetId = document.getElementById('targetId').value;
+            if (targetId === '') return alert('Wprowadź poprawne ID tokenu.');
+
+            try {
+                toggleLoading(true);
+                
+                // Pobieranie danych o tokenie z metod widoku (view) smart kontraktu
+                const uriData = await contract.tokenURI(targetId);
+                const voteCount = await contract.votes(targetId);
+                const marketData = await contract.marketplace(targetId);
+
+                // Dekodowanie formatu JSON z ciągu znaków data:application/json;base64,
+                const jsonB64 = uriData.split(',')[1];
+                const decodedJson = JSON.parse(atob(jsonB64));
+
+                // Wyodrębnienie obrazu SVG wygenerowanego w smart kontrakcie
+                const svgImage = decodedJson.image; 
+
+                // Dynamiczne renderowanie karty NFT w elemencie DOM
+                document.getElementById('results').innerHTML = `
+                    <div class="nft-card">
+                        <img src="${svgImage}" class="nft-preview" alt="NFT Preview">
+                        <div class="nft-info">
+                            <h3>${decodedJson.name}</h3>
+                            <span>${decodedJson.description}</span>
+                            <hr style="border:0; border-top: 1px solid #eee; margin:10px 0;">
+                            <span><strong>Liczba głosów społeczności:</strong> 👍 ${voteCount.toString()}</span>
+                            <span><strong>Status rynku:</strong> ${marketData.isForSale ? `Na sprzedaż za: 🪙 ${ethers.formatEther(marketData.price)} ETH` : 'Nie wystawiony'}</span>
+                        </div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error(error);
+                document.getElementById('results').innerHTML = `<p style="color:red; text-align:center;">Błąd: Nie znaleziono tokenu o podanym identyfikatorze ID.</p>`;
+            } finally {
+                toggleLoading(false);
+            }
+        }
+
+        // ODDANIE GŁOSU NA NFT
+        async function uiVoteHaiku() {
+            if (!contract) return alert('Połącz portfel Web3!');
+            const targetId = document.getElementById('targetId').value;
+            if (targetId === '') return alert('Podaj ID tokenu do zagłosowania.');
+
+            try {
+                toggleLoading(true);
+                const tx = await contract.vote(targetId);
+                await tx.wait();
+                alert('Głos został zarejestrowany pomyślnie!');
+                await uiFetchAndDisplay(); // Odświeżenie widoku danych
+            } catch (error) {
+                console.error(error);
+                alert('Błąd podczas głosowania: ' + (error.reason || error.message));
+            } finally {
+                toggleLoading(false);
+            }
+        }
+
+        // WYSTAWIENIE NFT NA SPRZEDAŻ (MARKETPLACE)
+        async function uiListHaiku() {
+            if (!contract) return alert('Połącz portfel Web3!');
+            const targetId = document.getElementById('targetId').value;
+            const price = document.getElementById('listingPrice').value;
+
+            if (targetId === '' || !price) return alert('Wprowadź ID tokenu oraz cenę sprzedaży.');
+
+            try {
+                toggleLoading(true);
+                // Konwersja ceny z jednostek Ether na Wei (struktura wymagana przez EVM)
+                const priceInWei = ethers.parseEther(price);
+                
+                const tx = await contract.listHaiku(targetId, priceInWei);
+                await tx.wait();
+                alert('Token został pomyślnie wystawiony na rynku!');
+                await uiFetchAndDisplay();
+            } catch (error) {
+                console.error(error);
+                alert('Błąd wystawiania na rynek: ' + (error.reason || error.message));
+            } finally {
+                toggleLoading(false);
+            }
+        }
+
+        // ZAKUP TOKENU NFT
+        async function uiBuyHaiku() {
+            if (!contract) return alert('Połącz portfel Web3!');
+            const targetId = document.getElementById('targetId').value;
+            if (targetId === '') return alert('Podaj ID tokenu, który chcesz zakupić.');
+
+            try {
+                toggleLoading(true);
+                // Pobranie ceny bezpośrednio z kontraktu w celach bezpieczeństwa
+                const marketData = await contract.marketplace(targetId);
+                if (!marketData.isForSale) return alert('Ten token nie jest obecnie na sprzedaż.');
+
+                // Transakcja zakupu przesyłająca natywną wartość ETH (payable)
+                const tx = await contract.buyHaiku(targetId, { value: marketData.price });
+                await tx.wait();
+                alert('Gratulacje! Zakupiłeś poetycki token NFT.');
+                await uiFetchAndDisplay();
+            } catch (error) {
+                console.error(error);
+                alert('Błąd zakupu tokenu: ' + (error.reason || error.message));
+            } finally {
+                toggleLoading(false);
+            }
+        }
+    </script>
+</body>
+</html>
